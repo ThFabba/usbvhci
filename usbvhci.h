@@ -75,11 +75,51 @@ USB_BUSIFFN_ROOTHUB_INIT_NOTIFY VhciHubRootHubInitNotification;
 USB_BUSIFFN_FLUSH_TRANSFERS VhciHubFlushTransfers;
 USB_BUSIFFN_SET_DEVHANDLE_DATA VhciHubSetDeviceHandleData;
 
-PUSB_BUSIFFN_GETUSBDI_VERSION GetUSBDIVersion;
-PUSB_BUSIFFN_QUERY_BUS_TIME QueryBusTime;
-PUSB_BUSIFFN_SUBMIT_ISO_OUT_URB SubmitIsoOutUrb;
-PUSB_BUSIFFN_QUERY_BUS_INFORMATION QueryBusInformation;
-PUSB_BUSIFFN_IS_DEVICE_HIGH_SPEED IsDeviceHighSpeed;
+VOID
+USB_BUSIFFN
+VhciDeviceGetUSBDIVersion(
+    _In_ PVOID BusContext,
+    _Out_opt_ PUSBD_VERSION_INFORMATION VersionInformation,
+    _Out_opt_ PULONG HcdCapabilities);
+
+_Must_inspect_result_
+NTSTATUS
+USB_BUSIFFN
+VhciDeviceQueryBusTime(
+    _In_ PVOID BusContext,
+    _Out_opt_ PULONG CurrentUsbFrame);
+
+_Must_inspect_result_
+NTSTATUS
+USB_BUSIFFN
+VhciDeviceSubmitIsoOutUrb(
+    _In_ PVOID BusContext,
+    _In_ PURB Urb);
+
+_Must_inspect_result_
+NTSTATUS
+USB_BUSIFFN
+VhciDeviceQueryBusInformation(
+    _In_ PVOID BusContext,
+    _In_ ULONG Level,
+    _Inout_ PVOID BusInformationBuffer,
+    _Out_ PULONG BusInformationBufferLength,
+    _Out_opt_ PULONG BusInformationActualLength);
+
+_Must_inspect_result_
+BOOLEAN
+USB_BUSIFFN
+VhciDeviceIsDeviceHighSpeed(
+    _In_ PVOID BusContext);
+
+NTSTATUS
+USB_BUSIFFN
+VhciDeviceEnumLogEntry(
+    _In_ PVOID BusContext,
+    _In_ ULONG DriverTag,
+    _In_ ULONG EnumTag,
+    _In_ ULONG P1,
+    _In_ ULONG P2);
 
 /* fdo.c */
 _IRQL_requires_max_(DISPATCH_LEVEL)

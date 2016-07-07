@@ -299,3 +299,106 @@ VhciHubSetDeviceHandleData(
 
     UNIMPLEMENTED;
 }
+
+/*
+ * USB Device Interface functions
+ */
+_Use_decl_annotations_
+VOID
+USB_BUSIFFN
+VhciDeviceGetUSBDIVersion(
+    PVOID BusContext,
+    PUSBD_VERSION_INFORMATION VersionInformation,
+    PULONG HcdCapabilities)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(VersionInformation);
+    DBG_UNREFERENCED_PARAMETER(HcdCapabilities);
+
+    UNIMPLEMENTED;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+USB_BUSIFFN
+VhciDeviceQueryBusTime(
+    PVOID BusContext,
+    PULONG CurrentUsbFrame)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(CurrentUsbFrame);
+
+    UNIMPLEMENTED;
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+USB_BUSIFFN
+VhciDeviceSubmitIsoOutUrb(
+    PVOID BusContext,
+    PURB Urb)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(Urb);
+
+    UNIMPLEMENTED;
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+USB_BUSIFFN
+VhciDeviceQueryBusInformation(
+    PVOID BusContext,
+    ULONG Level,
+    PVOID BusInformationBuffer,
+    PULONG BusInformationBufferLength,
+    PULONG BusInformationActualLength)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(Level);
+    DBG_UNREFERENCED_PARAMETER(BusInformationBuffer);
+    DBG_UNREFERENCED_PARAMETER(BusInformationBufferLength);
+    DBG_UNREFERENCED_PARAMETER(BusInformationActualLength);
+
+    UNIMPLEMENTED;
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+_Use_decl_annotations_
+BOOLEAN
+USB_BUSIFFN
+VhciDeviceIsDeviceHighSpeed(
+    PVOID BusContext)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+
+    UNIMPLEMENTED;
+
+    return TRUE;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+USB_BUSIFFN
+VhciDeviceEnumLogEntry(
+    PVOID BusContext,
+    ULONG DriverTag,
+    ULONG EnumTag,
+    ULONG P1,
+    ULONG P2)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(DriverTag);
+    DBG_UNREFERENCED_PARAMETER(EnumTag);
+    DBG_UNREFERENCED_PARAMETER(P1);
+    DBG_UNREFERENCED_PARAMETER(P2);
+
+    UNIMPLEMENTED;
+
+    return STATUS_NOT_IMPLEMENTED;
+}

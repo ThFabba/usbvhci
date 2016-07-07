@@ -251,6 +251,7 @@ VhciInterfaceReference(
     NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
 
     NewRefCount = InterlockedIncrement(&PdoExtension->InterfaceRefCount);
+    DPRINT1("Pdo %p: VhciInterfaceReference -- refcount = %ld\n", PdoExtension->Common.DeviceObject, NewRefCount);
     NT_ASSERT(NewRefCount >= 1);
     NT_ASSERT(NewRefCount <= 1000);
 }
@@ -271,6 +272,7 @@ VhciInterfaceDereference(
     NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
 
     NewRefCount = InterlockedDecrement(&PdoExtension->InterfaceRefCount);
+    DPRINT1("Pdo %p: VhciInterfaceDereference -- refcount = %ld\n", PdoExtension->Common.DeviceObject, NewRefCount);
     NT_ASSERT(NewRefCount >= 0);
     NT_ASSERT(NewRefCount <= 1000);
 }
@@ -370,13 +372,13 @@ VhciPdoQueryInterface(
     else if (IsEqualGUIDAligned(InterfaceType, &USB_BUS_INTERFACE_USBDI_GUID))
     {
         DPRINT("Pdo %p: QI/USB_BUS_INTERFACE_USBDI_GUID\n", PdoExtension->Common.DeviceObject);
-        if (Version >= 1)
+        if (Version > 2)
         {
             DPRINT1("Pdo %p: QI/USB_BUS_INTERFACE_USBDI_GUID v%u not supported\n", PdoExtension->Common.DeviceObject, Version);
             return STATUS_NOT_SUPPORTED;
         }
 
-        DeviceInterface = (PVOID)Interface;
+        DeviceInterface = (PUSB_BUS_INTERFACE_USBDI_V2)Interface;
         DeviceInterface->Size = sizeof(USB_BUS_INTERFACE_USBDI_V0);
         DeviceInterface->Version = 0;
         DeviceInterface->BusContext = PdoExtension;
@@ -387,19 +389,24 @@ VhciPdoQueryInterface(
         {
             C_ASSERT(sizeof(USB_BUS_INTERFACE_USBDI_V1) == RTL_SIZEOF_THROUGH_FIELD(USB_BUS_INTERFACE_USBDI_V2, IsDeviceHighSpeed));
             DeviceInterface->Size = sizeof(USB_BUS_INTERFACE_USBDI_V1);
-            DeviceInterface->Version = 0;
-            DeviceInterface->GetUSBDIVersion = NULL;
-            DeviceInterface->QueryBusTime = NULL;
-            DeviceInterface->SubmitIsoOutUrb = NULL;
-            DeviceInterface->QueryBusInformation = NULL;
-            DeviceInterface->IsDeviceHighSpeed = NULL;
+            DeviceInterface->Version = 1;
+            DeviceInterface->GetUSBDIVersion = VhciDeviceGetUSBDIVersion;
+            DeviceInterface->QueryBusTime = VhciDeviceQueryBusTime;
+            DeviceInterface->SubmitIsoOutUrb = VhciDeviceSubmitIsoOutUrb;
+            DeviceInterface->QueryBusInformation = VhciDeviceQueryBusInformation;
+            DeviceInterface->IsDeviceHighSpeed = VhciDeviceIsDeviceHighSpeed;
         }
 
+        if (Version >= 2 && Size >= sizeof(USB_BUS_INTERFACE_USBDI_V2))
         {
-            //DeviceInterface->EnumLogEntry = NULL;
+            C_ASSERT(sizeof(USB_BUS_INTERFACE_USBDI_V2) == RTL_SIZEOF_THROUGH_FIELD(USB_BUS_INTERFACE_USBDI_V2, EnumLogEntry));
+            DeviceInterface->Size = sizeof(USB_BUS_INTERFACE_USBDI_V2);
+            DeviceInterface->Version = 2;
+            DeviceInterface->EnumLogEntry = VhciDeviceEnumLogEntry;
         }
-        //HubInterface->InterfaceReference(HubInterface->BusContext);
-        return STATUS_NOT_SUPPORTED;// STATUS_SUCCESS;
+
+        DeviceInterface->InterfaceReference(DeviceInterface->BusContext);
+        return STATUS_SUCCESS;
     }
 
     if (!NT_SUCCESS(RtlStringFromGUID(InterfaceType, &InterfaceTypeString)))
@@ -585,6 +592,166 @@ VhciPdoPnp(
 _Use_decl_annotations_
 NTSTATUS
 NTAPI
+VhciPdoHandleUrb(
+    PVHCI_PDO_DEVICE_EXTENSION PdoExtension,
+    PURB Urb)
+{
+    switch (Urb->UrbHeader.Function)
+    {
+        /* Descriptors */
+        case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE:
+            DPRINT("Pdo %p: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT:
+            DPRINT("Pdo %p: URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE:
+            DPRINT("Pdo %p: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_GET_MS_FEATURE_DESCRIPTOR:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_MS_FEATURE_DESCRIPTOR\n", PdoExtension->Common.DeviceObject);
+            break;
+            
+        /* Transfers */
+        case URB_FUNCTION_CONTROL_TRANSFER:
+            DPRINT("Pdo %p: URB_FUNCTION_CONTROL_TRANSFER\n", PdoExtension->Common.DeviceObject);
+            break; 
+        case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
+            DPRINT("Pdo %p: URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER\n", PdoExtension->Common.DeviceObject);
+            break; 
+        case URB_FUNCTION_ISOCH_TRANSFER:
+            DPRINT("Pdo %p: URB_FUNCTION_ISOCH_TRANSFER\n", PdoExtension->Common.DeviceObject);
+            break;
+
+        /* Configure device */
+        case URB_FUNCTION_SELECT_CONFIGURATION:
+            DPRINT("Pdo %p: URB_FUNCTION_SELECT_CONFIGURATION\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_GET_CONFIGURATION:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_CONFIGURATION\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_SELECT_INTERFACE:
+            DPRINT("Pdo %p: URB_FUNCTION_SELECT_INTERFACE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_GET_INTERFACE:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_INTERFACE\n", PdoExtension->Common.DeviceObject);
+            break;
+
+        /* Get Status */
+        case URB_FUNCTION_GET_STATUS_FROM_DEVICE:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_STATUS_FROM_DEVICE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_GET_STATUS_FROM_INTERFACE:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_STATUS_FROM_INTERFACE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_GET_STATUS_FROM_ENDPOINT:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_STATUS_FROM_ENDPOINT\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_GET_STATUS_FROM_OTHER:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_STATUS_FROM_OTHER\n", PdoExtension->Common.DeviceObject);
+            break;
+
+        /* Set/Clear Feature */
+        case URB_FUNCTION_SET_FEATURE_TO_DEVICE:
+            DPRINT("Pdo %p: URB_FUNCTION_SET_FEATURE_TO_DEVICE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_CLEAR_FEATURE_TO_DEVICE:
+            DPRINT("Pdo %p: URB_FUNCTION_CLEAR_FEATURE_TO_DEVICE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_SET_FEATURE_TO_INTERFACE:
+            DPRINT("Pdo %p: URB_FUNCTION_SET_FEATURE_TO_INTERFACE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_CLEAR_FEATURE_TO_INTERFACE:
+            DPRINT("Pdo %p: URB_FUNCTION_CLEAR_FEATURE_TO_INTERFACE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_SET_FEATURE_TO_ENDPOINT:
+            DPRINT("Pdo %p: URB_FUNCTION_SET_FEATURE_TO_ENDPOINT\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_CLEAR_FEATURE_TO_ENDPOINT:
+            DPRINT("Pdo %p: URB_FUNCTION_CLEAR_FEATURE_TO_ENDPOINT\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_SET_FEATURE_TO_OTHER:
+            DPRINT("Pdo %p: URB_FUNCTION_SET_FEATURE_TO_OTHER\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_CLEAR_FEATURE_TO_OTHER:
+            DPRINT("Pdo %p: URB_FUNCTION_CLEAR_FEATURE_TO_OTHER\n", PdoExtension->Common.DeviceObject);
+            break;
+
+        /* Class-specific */
+        case URB_FUNCTION_CLASS_DEVICE:
+            DPRINT("Pdo %p: URB_FUNCTION_CLASS_DEVICE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_CLASS_INTERFACE:
+            DPRINT("Pdo %p: URB_FUNCTION_CLASS_INTERFACE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_CLASS_ENDPOINT:
+            DPRINT("Pdo %p: URB_FUNCTION_CLASS_ENDPOINT\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_CLASS_OTHER:
+            DPRINT("Pdo %p: URB_FUNCTION_CLASS_OTHER\n", PdoExtension->Common.DeviceObject);
+            break; 
+        
+        /* Vendor-specific */
+        case URB_FUNCTION_VENDOR_DEVICE:
+            DPRINT("Pdo %p: URB_FUNCTION_VENDOR_DEVICE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_VENDOR_INTERFACE:
+            DPRINT("Pdo %p: URB_FUNCTION_VENDOR_INTERFACE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_VENDOR_ENDPOINT:
+            DPRINT("Pdo %p: URB_FUNCTION_VENDOR_ENDPOINT\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_VENDOR_OTHER:
+            DPRINT("Pdo %p: URB_FUNCTION_VENDOR_OTHER\n", PdoExtension->Common.DeviceObject);
+            break;
+        
+        /* Reset/Stall/Abort */
+        case URB_FUNCTION_ABORT_PIPE:
+            DPRINT("Pdo %p: URB_FUNCTION_ABORT_PIPE\n", PdoExtension->Common.DeviceObject);
+            break; 
+        case URB_FUNCTION_SYNC_RESET_PIPE_AND_CLEAR_STALL:
+            DPRINT("Pdo %p: URB_FUNCTION_SYNC_RESET_PIPE_AND_CLEAR_STALL\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_SYNC_RESET_PIPE:
+            DPRINT("Pdo %p: URB_FUNCTION_SYNC_RESET_PIPE\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_SYNC_CLEAR_STALL:
+            DPRINT("Pdo %p: URB_FUNCTION_SYNC_CLEAR_STALL\n", PdoExtension->Common.DeviceObject);
+            break;
+
+        /* Frame configuration */
+        case URB_FUNCTION_TAKE_FRAME_LENGTH_CONTROL:
+            DPRINT("Pdo %p: URB_FUNCTION_TAKE_FRAME_LENGTH_CONTROL\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_RELEASE_FRAME_LENGTH_CONTROL:
+            DPRINT("Pdo %p: URB_FUNCTION_RELEASE_FRAME_LENGTH_CONTROL\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_GET_FRAME_LENGTH:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_FRAME_LENGTH\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_SET_FRAME_LENGTH:
+            DPRINT("Pdo %p: URB_FUNCTION_SET_FRAME_LENGTH\n", PdoExtension->Common.DeviceObject);
+            break;
+        case URB_FUNCTION_GET_CURRENT_FRAME_NUMBER:
+            DPRINT("Pdo %p: URB_FUNCTION_GET_CURRENT_FRAME_NUMBER\n", PdoExtension->Common.DeviceObject);
+            break;
+    }
+
+    return STATUS_INVALID_DEVICE_REQUEST;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+NTAPI
 VhciPdoDeviceControl(
     PVHCI_PDO_DEVICE_EXTENSION PdoExtension,
     PIRP Irp)
@@ -592,6 +759,7 @@ VhciPdoDeviceControl(
     NTSTATUS Status;
     PDEVICE_OBJECT DeviceObject;
     PIO_STACK_LOCATION IoStack;
+    PULONG PortStatusBits;
 
     PAGED_CODE();
 
@@ -603,7 +771,8 @@ VhciPdoDeviceControl(
     {
         case IOCTL_INTERNAL_USB_SUBMIT_URB:
             DPRINT("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL/IOCTL_INTERNAL_USB_SUBMIT_URB\n", DeviceObject);
-            Status = STATUS_INVALID_DEVICE_REQUEST; 
+            Status = VhciPdoHandleUrb(PdoExtension,
+                                      IoStack->Parameters.Others.Argument1);
             break;
         case IOCTL_INTERNAL_USB_GET_HUB_COUNT:
             DPRINT("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL/IOCTL_INTERNAL_USB_GET_HUB_COUNT\n", DeviceObject); 
@@ -624,6 +793,33 @@ VhciPdoDeviceControl(
                 *(PVOID *)IoStack->Parameters.Others.Argument2 = DeviceObject;
             }
             Status = STATUS_SUCCESS;
+            break;
+        case IOCTL_INTERNAL_USB_GET_PORT_STATUS:
+            DPRINT("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL/IOCTL_INTERNAL_USB_GET_PORT_STATUS\n", DeviceObject);
+            PortStatusBits = IoStack->Parameters.Others.Argument1;
+            *PortStatusBits = 0;
+            //*PortStatusBits |= (USBD_PORT_ENABLED | USBD_PORT_CONNECTED) << PortNumber * 2;
+            Status = STATUS_SUCCESS;
+            break;
+        case IOCTL_INTERNAL_USB_GET_PARENT_HUB_INFO:
+            DPRINT("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL/IOCTL_INTERNAL_USB_GET_PARENT_HUB_INFO\n", DeviceObject);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+        case IOCTL_INTERNAL_USB_RESET_PORT:
+            DPRINT("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL/IOCTL_INTERNAL_USB_RESET_PORT\n", DeviceObject);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+        case IOCTL_INTERNAL_USB_ENABLE_PORT:
+            DPRINT("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL/IOCTL_INTERNAL_USB_ENABLE_PORT\n", DeviceObject);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+        case IOCTL_INTERNAL_USB_CYCLE_PORT:
+            DPRINT("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL/IOCTL_INTERNAL_USB_CYCLE_PORT\n", DeviceObject);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
+            break;
+        case IOCTL_INTERNAL_USB_GET_DEVICE_HANDLE:
+            DPRINT("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL/IOCTL_INTERNAL_USB_GET_DEVICE_HANDLE\n", DeviceObject);
+            Status = STATUS_INVALID_DEVICE_REQUEST;
             break;
         default:
             DPRINT("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL/%lx\n",

@@ -86,9 +86,13 @@ VhciFdoStartDeviceCompletion(
     NT_ASSERT(FdoExtension->Common.DeviceObject == DeviceObject);
     NT_ASSERT(FdoExtension->Common.Deleted == FALSE);
     IoStack = IoGetCurrentIrpStackLocation(Irp);
-    NT_ASSERT(Irp->PendingReturned);
     NT_ASSERT(IoStack->MajorFunction == IRP_MJ_PNP);
     NT_ASSERT(IoStack->MinorFunction == IRP_MN_START_DEVICE);
+
+    if (Irp->PendingReturned)
+    {
+        IoMarkIrpPending(Irp);
+    }
 
     /* Start device */
 
@@ -215,9 +219,7 @@ VhciFdoPnp(
             DPRINT("Fdo %p: IRP_MJ_PNP/IRP_MN_START_DEVICE\n", DeviceObject);
             IoCopyCurrentIrpStackLocationToNext(Irp);
             IoSetCompletionRoutine(Irp, VhciFdoStartDeviceCompletion, NULL, TRUE, TRUE, TRUE);
-            IoMarkIrpPending(Irp);
-            (void)IoCallDriver(FdoExtension->LowerDevice, Irp);
-            return STATUS_PENDING;
+            return IoCallDriver(FdoExtension->LowerDevice, Irp);
         case IRP_MN_REMOVE_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Fdo %p: IRP_MJ_PNP/IRP_MN_REMOVE_DEVICE\n", DeviceObject);
