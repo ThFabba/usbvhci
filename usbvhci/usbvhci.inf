@@ -1,0 +1,50 @@
+;
+; usbvhci.inf
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=USB
+ClassGuid={36FC9E60-C465-11CF-8056-444553540000}
+Provider=%ReactOS%
+DriverVer=
+CatalogFile=usbvhci.cat
+
+[DestinationDirs]
+DefaultDestDir = 12
+
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+usbvhci.sys = 1
+
+[Manufacturer]
+%ManufacturerName%=Standard,NT$ARCH$
+
+[Standard.NT$ARCH$]
+%VHCI.DeviceDesc%=VHCI_Inst,ROOT\USBVHCI
+
+[VHCI_Inst.NT]
+CopyFiles = VHCI_CopyFiles.NT
+
+[VHCI_CopyFiles.NT]
+usbvhci.sys
+
+[VHCI_Inst.NT.Services]
+AddService = usbvhci, 0x00000002, usbvhci_Service_Inst
+
+[usbvhci_Service_Inst]
+ServiceType   = 1
+StartType     = 0
+ErrorControl  = 1
+ServiceBinary = %12%\usbvhci.sys
+LoadOrderGroup = Base
+
+[Strings]
+ReactOS = "ReactOS Team"
+ManufacturerName="(Generic USB Devices)"
+ClassName="USB Controllers"
+DiskName="usbvhci Source Disk"
+VHCI.DeviceDesc="Virtual USB Host Controller"
