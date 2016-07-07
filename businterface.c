@@ -34,6 +34,9 @@ VhciHubCreateUsbDevice(
     DBG_UNREFERENCED_PARAMETER(HubDeviceHandle);
     DBG_UNREFERENCED_PARAMETER(PortStatus);
     DBG_UNREFERENCED_PARAMETER(PortNumber);
+
+    UNIMPLEMENTED;
+
     return STATUS_NOT_IMPLEMENTED;
 }
 
@@ -46,6 +49,9 @@ VhciHubInitializeUsbDevice(
 {
     DBG_UNREFERENCED_PARAMETER(BusContext);
     DBG_UNREFERENCED_PARAMETER(DeviceHandle);
+
+    UNIMPLEMENTED;
+
     return STATUS_NOT_IMPLEMENTED;
 }
 
@@ -66,6 +72,9 @@ VhciHubGetUsbDescriptors(
     DBG_UNREFERENCED_PARAMETER(DeviceDescriptorBufferLength);
     DBG_UNREFERENCED_PARAMETER(ConfigDescriptorBuffer);
     DBG_UNREFERENCED_PARAMETER(ConfigDescriptorBufferLength);
+
+    UNIMPLEMENTED;
+
     return STATUS_NOT_IMPLEMENTED;
 }
 
@@ -80,6 +89,9 @@ VhciHubRemoveUsbDevice(
     DBG_UNREFERENCED_PARAMETER(BusContext);
     DBG_UNREFERENCED_PARAMETER(DeviceHandle);
     DBG_UNREFERENCED_PARAMETER(Flags);
+    
+    UNIMPLEMENTED;
+
     return STATUS_NOT_IMPLEMENTED;
 }
 
@@ -94,6 +106,9 @@ VhciHubRestoreUsbDevice(
     DBG_UNREFERENCED_PARAMETER(BusContext);
     DBG_UNREFERENCED_PARAMETER(OldDeviceHandle);
     DBG_UNREFERENCED_PARAMETER(NewDeviceHandle);
+
+    UNIMPLEMENTED;
+
     return STATUS_NOT_IMPLEMENTED;
 }
 
@@ -106,6 +121,9 @@ VhciHubGetPortHackFlags(
 {
     DBG_UNREFERENCED_PARAMETER(BusContext);
     DBG_UNREFERENCED_PARAMETER(Flags);
+
+    UNIMPLEMENTED;
+
     return STATUS_NOT_IMPLEMENTED;
 }
 
@@ -124,5 +142,160 @@ VhciHubQueryDeviceInformation(
     DBG_UNREFERENCED_PARAMETER(DeviceInformationBuffer);
     DBG_UNREFERENCED_PARAMETER(DeviceInformationBufferLength);
     DBG_UNREFERENCED_PARAMETER(LengthOfDataCopied);
+
+    UNIMPLEMENTED;
+
     return STATUS_NOT_IMPLEMENTED;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+NTAPI
+VhciHubGetControllerInformation(
+    PVOID BusContext,
+    PVOID ControllerInformationBuffer,
+    ULONG ControllerInformationBufferLength,
+    PULONG LengthOfDataCopied)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(ControllerInformationBuffer);
+    DBG_UNREFERENCED_PARAMETER(ControllerInformationBufferLength);
+    DBG_UNREFERENCED_PARAMETER(LengthOfDataCopied);
+
+    UNIMPLEMENTED;
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+NTAPI
+VhciHubControllerSelectiveSuspend(
+    PVOID BusContext,
+    BOOLEAN Enable)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(Enable);
+
+    UNIMPLEMENTED;
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+NTAPI
+VhciHubGetExtendedHubInformation(
+    PVOID BusContext,
+    PDEVICE_OBJECT HubPhysicalDeviceObject,
+    PVOID HubInformationBuffer,
+    ULONG HubInformationBufferLength,
+    PULONG LengthOfDataCopied)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(HubPhysicalDeviceObject);
+    DBG_UNREFERENCED_PARAMETER(HubInformationBuffer);
+    DBG_UNREFERENCED_PARAMETER(HubInformationBufferLength);
+    DBG_UNREFERENCED_PARAMETER(LengthOfDataCopied);
+
+    UNIMPLEMENTED;
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+NTAPI
+VhciHubGetRootHubSymbolicName(
+    PVOID BusContext,
+    PVOID HubSymNameBuffer,
+    ULONG HubSymNameBufferLength,
+    PULONG HubSymNameActualLength)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(HubSymNameBuffer);
+    DBG_UNREFERENCED_PARAMETER(HubSymNameBufferLength);
+    DBG_UNREFERENCED_PARAMETER(HubSymNameActualLength);
+
+    UNIMPLEMENTED;
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+
+_Use_decl_annotations_
+PVOID
+NTAPI
+VhciHubGetDeviceBusContext(
+    PVOID HubBusContext,
+    PUSB_DEVICE_HANDLE DeviceHandle)
+{
+    DBG_UNREFERENCED_PARAMETER(HubBusContext);
+    DBG_UNREFERENCED_PARAMETER(DeviceHandle);
+
+    UNIMPLEMENTED;
+
+    return NULL;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+NTAPI
+VhciHubInitialize20Hub(
+    PVOID BusContext,
+    PUSB_DEVICE_HANDLE HubDeviceHandle,
+    ULONG TtCount)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(HubDeviceHandle);
+    DBG_UNREFERENCED_PARAMETER(TtCount);
+
+    UNIMPLEMENTED;
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+_Use_decl_annotations_
+NTSTATUS
+NTAPI
+VhciHubRootHubInitNotification(
+    PVOID BusContext,
+    PVOID CallbackContext,
+    PRH_INIT_CALLBACK CallbackRoutine)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(CallbackContext);
+    DBG_UNREFERENCED_PARAMETER(CallbackRoutine);
+
+    UNIMPLEMENTED;
+
+    return STATUS_NOT_IMPLEMENTED;
+}
+
+_Use_decl_annotations_
+VOID
+NTAPI
+VhciHubFlushTransfers(
+    PVOID BusContext,
+    PVOID DeviceHandle)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(DeviceHandle);
+
+    UNIMPLEMENTED;
+}
+
+_Use_decl_annotations_
+VOID
+NTAPI
+VhciHubSetDeviceHandleData(
+    PVOID BusContext,
+    PVOID DeviceHandle,
+    PDEVICE_OBJECT UsbDevicePdo)
+{
+    DBG_UNREFERENCED_PARAMETER(BusContext);
+    DBG_UNREFERENCED_PARAMETER(DeviceHandle);
+    DBG_UNREFERENCED_PARAMETER(UsbDevicePdo);
+
+    UNIMPLEMENTED;
 }

@@ -300,13 +300,13 @@ VhciPdoQueryInterface(
     if (IsEqualGUIDAligned(InterfaceType, &USB_BUS_INTERFACE_HUB_GUID))
     {
         DPRINT("Pdo %p: QI/USB_BUS_INTERFACE_HUB_GUID\n", PdoExtension->Common.DeviceObject);
-        if (Version >= 3)
+        if (Version > 5)
         {
             DPRINT1("Pdo %p: QI/USB_BUS_INTERFACE_HUB_GUID v%u not supported\n", PdoExtension->Common.DeviceObject, Version);
             return STATUS_NOT_SUPPORTED;
         }
 
-        HubInterface = (PVOID)Interface;
+        HubInterface = (PUSB_BUS_INTERFACE_HUB_V5)Interface;
         HubInterface->Size = sizeof(USB_BUS_INTERFACE_HUB_V0);
         HubInterface->Version = 0;
         HubInterface->BusContext = PdoExtension;
@@ -332,12 +332,36 @@ VhciPdoQueryInterface(
             C_ASSERT(sizeof(USB_BUS_INTERFACE_HUB_V2) == RTL_SIZEOF_THROUGH_FIELD(USB_BUS_INTERFACE_HUB_V5, Initialize20Hub));
             HubInterface->Size = sizeof(USB_BUS_INTERFACE_HUB_V2);
             HubInterface->Version = 2;
-            HubInterface->GetControllerInformation = NULL;
-            HubInterface->ControllerSelectiveSuspend = NULL;
-            HubInterface->GetExtendedHubInformation = NULL;
-            HubInterface->GetRootHubSymbolicName = NULL;
-            HubInterface->GetDeviceBusContext = NULL;
-            HubInterface->Initialize20Hub = NULL;
+            HubInterface->GetControllerInformation = VhciHubGetControllerInformation;
+            HubInterface->ControllerSelectiveSuspend = VhciHubControllerSelectiveSuspend;
+            HubInterface->GetExtendedHubInformation = VhciHubGetExtendedHubInformation;
+            HubInterface->GetRootHubSymbolicName = VhciHubGetRootHubSymbolicName;
+            HubInterface->GetDeviceBusContext = VhciHubGetDeviceBusContext;
+            HubInterface->Initialize20Hub = VhciHubInitialize20Hub;
+        }
+
+        if (Version >= 3 && Size >= sizeof(USB_BUS_INTERFACE_HUB_V3))
+        {
+            C_ASSERT(sizeof(USB_BUS_INTERFACE_HUB_V3) == RTL_SIZEOF_THROUGH_FIELD(USB_BUS_INTERFACE_HUB_V5, RootHubInitNotification));
+            HubInterface->Size = sizeof(USB_BUS_INTERFACE_HUB_V3);
+            HubInterface->Version = 3;
+            HubInterface->RootHubInitNotification = VhciHubRootHubInitNotification;
+        }
+
+        if (Version >= 4 && Size >= sizeof(USB_BUS_INTERFACE_HUB_V4))
+        {
+            C_ASSERT(sizeof(USB_BUS_INTERFACE_HUB_V4) == RTL_SIZEOF_THROUGH_FIELD(USB_BUS_INTERFACE_HUB_V5, FlushTransfers));
+            HubInterface->Size = sizeof(USB_BUS_INTERFACE_HUB_V4);
+            HubInterface->Version = 4;
+            HubInterface->FlushTransfers = VhciHubFlushTransfers;
+        }
+
+        if (Version >= 5 && Size >= sizeof(USB_BUS_INTERFACE_HUB_V5))
+        {
+            C_ASSERT(sizeof(USB_BUS_INTERFACE_HUB_V5) == RTL_SIZEOF_THROUGH_FIELD(USB_BUS_INTERFACE_HUB_V5, SetDeviceHandleData));
+            HubInterface->Size = sizeof(USB_BUS_INTERFACE_HUB_V5);
+            HubInterface->Version = 5;
+            HubInterface->SetDeviceHandleData = VhciHubSetDeviceHandleData;
         }
 
         HubInterface->InterfaceReference(HubInterface->BusContext);
