@@ -216,6 +216,7 @@ VhciFdoPnp(
             IoCopyCurrentIrpStackLocationToNext(Irp);
             IoSetCompletionRoutine(Irp, VhciFdoStartDeviceCompletion, NULL, TRUE, TRUE, TRUE);
             IoMarkIrpPending(Irp);
+            (void)IoCallDriver(FdoExtension->LowerDevice, Irp);
             return STATUS_PENDING;
         case IRP_MN_REMOVE_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
