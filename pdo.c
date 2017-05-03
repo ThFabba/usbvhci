@@ -834,6 +834,12 @@ VhciPdoHandleUrb(
         /* Get Status */
         case URB_FUNCTION_GET_STATUS_FROM_DEVICE:
             DPRINT("Pdo %p: URB_FUNCTION_GET_STATUS_FROM_DEVICE\n", PdoExtension->Common.DeviceObject);
+            if (Urb->UrbControlGetStatusRequest.TransferBufferLength >= sizeof(USHORT))
+            {
+                *(PUSHORT)Urb->UrbControlGetStatusRequest.TransferBuffer = USB_PORT_STATUS_CONNECT;
+            }
+            Urb->UrbControlGetStatusRequest.TransferBufferLength = sizeof(USHORT);
+            Irp->IoStatus.Information = sizeof(USHORT);
             break;
         case URB_FUNCTION_GET_STATUS_FROM_INTERFACE:
             DPRINT("Pdo %p: URB_FUNCTION_GET_STATUS_FROM_INTERFACE\n", PdoExtension->Common.DeviceObject);
@@ -902,6 +908,22 @@ VhciPdoHandleUrb(
             break;
         case URB_FUNCTION_CLASS_OTHER:
             DPRINT("Pdo %p: URB_FUNCTION_CLASS_OTHER\n", PdoExtension->Common.DeviceObject);
+            if (Urb->UrbControlVendorClassRequest.Request != USB_REQUEST_SET_FEATURE)
+            {
+                DPRINT("Pdo %p: URB_FUNCTION_CLASS_OTHER request not supported\n", PdoExtension->Common.DeviceObject);
+                break;
+            }
+#ifndef PORT_ENABLE
+#define PORT_ENABLE 1
+#define PORT_POWER 8
+#endif
+            switch (Urb->UrbControlVendorClassRequest.Value)
+            {
+                case PORT_ENABLE:
+                case PORT_POWER:
+                    Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+                    return STATUS_SUCCESS;
+            }
             break; 
         
         /* Vendor-specific */
