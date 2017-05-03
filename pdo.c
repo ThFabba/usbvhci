@@ -68,6 +68,7 @@ NTSTATUS
 NTAPI
 VhciPdoHandleUrb(
     _In_ PVHCI_PDO_DEVICE_EXTENSION PdoExtension,
+    _In_ PIRP Irp,
     _In_ PURB Urb);
 
 /* Section assignment */
@@ -650,13 +651,108 @@ NTSTATUS
 NTAPI
 VhciPdoHandleUrb(
     PVHCI_PDO_DEVICE_EXTENSION PdoExtension,
+    PIRP Irp,
     PURB Urb)
 {
+    static const USB_DEVICE_DESCRIPTOR RootHubDeviceDescriptor =
+    {
+        /* bLength */ sizeof(USB_DEVICE_DESCRIPTOR),
+        /* bDescriptorType */ USB_DEVICE_DESCRIPTOR_TYPE,
+        /* bcdUSB */ 0x0200,
+        /* bDeviceClass */ USB_DEVICE_CLASS_HUB,
+        /* bDeviceSubClass */ 0x00,
+        /* bDeviceProtocol */ 0x01,
+        /* bMaxPacketSize0 */ 0x40,
+        /* idVendor */ 0x1D6B,
+        /* idProduct */ 0x0002,
+        /* bcdDevice */ 0x0000,
+        /* iManufacturer */ 0x00,
+        /* iProduct */ 0x00,
+        /* iSerialNumber */ 0x00,
+        /* bNumConfigurations */ 0x01
+    };
+    static const struct
+    {
+        USB_CONFIGURATION_DESCRIPTOR ConfigurationDescriptor;
+        USB_INTERFACE_DESCRIPTOR InterfaceDescriptor;
+        USB_ENDPOINT_DESCRIPTOR EndpointDescriptor;
+    } RootHubConfiguration = {
+        {
+            /* bLength */ sizeof(USB_CONFIGURATION_DESCRIPTOR),
+            /* bDescriptorType */ USB_CONFIGURATION_DESCRIPTOR_TYPE,
+            /* wTotalLength */ sizeof(USB_CONFIGURATION_DESCRIPTOR) + sizeof(USB_INTERFACE_DESCRIPTOR) + sizeof(USB_ENDPOINT_DESCRIPTOR),
+            /* bNumInterfaces */ 1,
+            /* bConfigurationValue */ 1,
+            /* iConfiguration */ 0,
+            /* bmAttributes */ USB_CONFIG_SELF_POWERED,
+            /* MaxPower */ 0,
+        },
+        {
+            /* bLength */ sizeof(USB_INTERFACE_DESCRIPTOR),
+            /* bDescriptorType */ USB_INTERFACE_DESCRIPTOR_TYPE,
+            /* bInterfaceNumber */ 0,
+            /* bAlternateSetting */ 0,
+            /* bNumEndpoints */ 1,
+            /* bInterfaceClass */ USB_DEVICE_CLASS_HUB,
+            /* bInterfaceSubClass */ 1,
+            /* bInterfaceProtocol */ 0,
+            /* iInterface */ 0
+        },
+        {
+            /* bLength */ sizeof(USB_ENDPOINT_DESCRIPTOR),
+            /* bDescriptorType */ USB_ENDPOINT_DESCRIPTOR_TYPE,
+            /* bEndpointAddress */ 0x81,
+            /* bmAttributes */ USB_ENDPOINT_TYPE_INTERRUPT,
+            /* wMaxPacketSize */ 0x0001,
+            /* bInterval */ 0x0c
+        }
+    };
+    C_ASSERT(sizeof(RootHubConfiguration) == sizeof(USB_CONFIGURATION_DESCRIPTOR) + sizeof(USB_INTERFACE_DESCRIPTOR) + sizeof(USB_ENDPOINT_DESCRIPTOR));
+#define USB_HUB_DESCRIPTOR_TYPE 0x29
+    static const USB_HUB_DESCRIPTOR RootHubHubDescriptor =
+    {
+        /* bDescriptorLength */ sizeof(USB_HUB_DESCRIPTOR),
+        /* bDescriptorType */ USB_HUB_DESCRIPTOR_TYPE,
+        /* bNumberOfPorts */ 1,
+        /* wHubCharacteristics */ 0,
+        /* bPowerOnToPowerGood */ 0,
+        /* bHubControlCurrent */ 0,
+        /* bRemoveAndPowerMask */ { 0 }
+    };
+    PUSBD_INTERFACE_INFORMATION InterfaceInfo;
+
     switch (Urb->UrbHeader.Function)
     {
         /* Descriptors */
         case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
             DPRINT("Pdo %p: URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n", PdoExtension->Common.DeviceObject);
+            if (Urb->UrbHeader.UsbdDeviceHandle != NULL)
+            {
+                break;
+            }
+            if (Urb->UrbControlDescriptorRequest.DescriptorType == USB_DEVICE_DESCRIPTOR_TYPE)
+            {
+                RtlCopyMemory(Urb->UrbControlDescriptorRequest.TransferBuffer,
+                              &RootHubDeviceDescriptor,
+                              min(sizeof(RootHubDeviceDescriptor),
+                                  Urb->UrbControlDescriptorRequest.TransferBufferLength));
+                Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+                Urb->UrbControlDescriptorRequest.TransferBufferLength = sizeof(RootHubDeviceDescriptor);
+                Irp->IoStatus.Information = sizeof(RootHubDeviceDescriptor);
+                return STATUS_SUCCESS;
+            }
+            else if (Urb->UrbControlDescriptorRequest.DescriptorType == USB_CONFIGURATION_DESCRIPTOR_TYPE)
+            {
+                RtlCopyMemory(Urb->UrbControlDescriptorRequest.TransferBuffer,
+                              &RootHubConfiguration,
+                              min(sizeof(RootHubConfiguration),
+                                  Urb->UrbControlDescriptorRequest.TransferBufferLength));
+
+                Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+                Urb->UrbControlDescriptorRequest.TransferBufferLength = RootHubConfiguration.ConfigurationDescriptor.wTotalLength;
+                Irp->IoStatus.Information = RootHubConfiguration.ConfigurationDescriptor.wTotalLength;
+                return STATUS_SUCCESS;
+            }
             break;
         case URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE:
             DPRINT("Pdo %p: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n", PdoExtension->Common.DeviceObject);
@@ -691,7 +787,40 @@ VhciPdoHandleUrb(
         /* Configure device */
         case URB_FUNCTION_SELECT_CONFIGURATION:
             DPRINT("Pdo %p: URB_FUNCTION_SELECT_CONFIGURATION\n", PdoExtension->Common.DeviceObject);
-            break;
+            if (Urb->UrbSelectConfiguration.ConfigurationDescriptor == NULL)
+            {
+                DPRINT1("Pdo %p: URB_FUNCTION_SELECT_CONFIGURATION with NULL descriptor\n", PdoExtension->Common.DeviceObject);
+                return STATUS_SUCCESS;
+            }
+            if (Urb->UrbSelectConfiguration.ConfigurationDescriptor->bLength != RootHubConfiguration.ConfigurationDescriptor.wTotalLength ||
+                !RtlEqualMemory(Urb->UrbSelectConfiguration.ConfigurationDescriptor,
+                                &RootHubConfiguration,
+                                RootHubConfiguration.ConfigurationDescriptor.wTotalLength))
+            {
+                DPRINT1("Pdo %p: URB_FUNCTION_SELECT_CONFIGURATION descriptor does not match\n", PdoExtension->Common.DeviceObject);
+                NT_ASSERTMSG("Configuration descriptor mismatch", FALSE);
+                return STATUS_INVALID_PARAMETER;
+            }
+            InterfaceInfo = &Urb->UrbSelectConfiguration.Interface;
+            if (InterfaceInfo->NumberOfPipes != 1)
+            {
+                DPRINT1("Pdo %p: URB_FUNCTION_SELECT_CONFIGURATION unexpected number of pipes\n", PdoExtension->Common.DeviceObject);
+                NT_ASSERTMSG("NumberOfPipes mismatch", FALSE);
+                return STATUS_INVALID_PARAMETER;
+            }
+            Urb->UrbSelectConfiguration.ConfigurationHandle = (PVOID)&RootHubConfiguration.ConfigurationDescriptor;
+            InterfaceInfo->InterfaceHandle = (PVOID)&RootHubConfiguration.InterfaceDescriptor;
+            InterfaceInfo->Class = RootHubConfiguration.InterfaceDescriptor.bInterfaceClass;
+            InterfaceInfo->SubClass = RootHubConfiguration.InterfaceDescriptor.bInterfaceSubClass;
+            InterfaceInfo->Protocol = RootHubConfiguration.InterfaceDescriptor.bInterfaceProtocol;
+            InterfaceInfo->Reserved = 0;
+            InterfaceInfo->Pipes[0].MaximumPacketSize = RootHubConfiguration.EndpointDescriptor.wMaxPacketSize;
+            InterfaceInfo->Pipes[0].EndpointAddress = RootHubConfiguration.EndpointDescriptor.bEndpointAddress;
+            InterfaceInfo->Pipes[0].Interval = RootHubConfiguration.EndpointDescriptor.bInterval;
+            InterfaceInfo->Pipes[0].PipeType = RootHubConfiguration.EndpointDescriptor.bmAttributes & USB_ENDPOINT_TYPE_MASK;
+            InterfaceInfo->Pipes[0].PipeHandle = (PVOID)&RootHubConfiguration.EndpointDescriptor;
+            Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+            return STATUS_SUCCESS;
         case URB_FUNCTION_GET_CONFIGURATION:
             DPRINT("Pdo %p: URB_FUNCTION_GET_CONFIGURATION\n", PdoExtension->Common.DeviceObject);
             break;
@@ -745,6 +874,25 @@ VhciPdoHandleUrb(
         /* Class-specific */
         case URB_FUNCTION_CLASS_DEVICE:
             DPRINT("Pdo %p: URB_FUNCTION_CLASS_DEVICE\n", PdoExtension->Common.DeviceObject);
+            if (Urb->UrbHeader.UsbdDeviceHandle != NULL)
+            {
+                break;
+            }
+            if (Urb->UrbControlVendorClassRequest.Request == USB_REQUEST_GET_DESCRIPTOR)
+            {
+                if (Urb->UrbControlVendorClassRequest.Value >> 8 == USB_DEVICE_CLASS_RESERVED ||
+                    Urb->UrbControlVendorClassRequest.Value >> 8 == USB_DEVICE_CLASS_HUB)
+                {
+                    RtlCopyMemory(Urb->UrbControlVendorClassRequest.TransferBuffer,
+                                  &RootHubHubDescriptor,
+                                  min(sizeof(RootHubHubDescriptor),
+                                      Urb->UrbControlVendorClassRequest.TransferBufferLength));
+                    Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+                    Urb->UrbControlVendorClassRequest.TransferBufferLength = sizeof(RootHubHubDescriptor);
+                    Irp->IoStatus.Information = sizeof(RootHubHubDescriptor);
+                    return STATUS_SUCCESS;
+                }
+            }
             break;
         case URB_FUNCTION_CLASS_INTERFACE:
             DPRINT("Pdo %p: URB_FUNCTION_CLASS_INTERFACE\n", PdoExtension->Common.DeviceObject);
@@ -834,6 +982,7 @@ VhciPdoDeviceControl(
         case IOCTL_INTERNAL_USB_SUBMIT_URB:
             DPRINT("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL/IOCTL_INTERNAL_USB_SUBMIT_URB\n", DeviceObject);
             Status = VhciPdoHandleUrb(PdoExtension,
+                                      Irp,
                                       IoStack->Parameters.Others.Argument1);
             break;
         case IOCTL_INTERNAL_USB_GET_HUB_COUNT:

@@ -15,7 +15,7 @@ add_library(usbvhci SHARED
     guid.c)
     #usbvhci.rc)
 
-target_link_libraries(usbvhci uuid)
+target_link_libraries(usbvhci uuid memcmp)
 set_module_type(usbvhci kernelmodedriver)
 add_importlibs(usbvhci ntoskrnl hal)
 add_pch(usbvhci usbvhci.h SOURCE)
