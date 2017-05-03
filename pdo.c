@@ -84,18 +84,54 @@ VhciPdoHandleUrb(
 #endif /* ALLOC_PRAGMA */
 
 /* Functions  */
+static DRIVER_CANCEL VhciCancelStatusChange;
+_Use_decl_annotations_
+VOID
+NTAPI
+VhciCancelStatusChange(
+    PDEVICE_OBJECT DeviceObject,
+    PIRP Irp)
+{
+    PVHCI_PDO_DEVICE_EXTENSION PdoExtension;
+
+    IoReleaseCancelSpinLock(Irp->CancelIrql);
+
+    PdoExtension = DeviceObject->DeviceExtension;
+    NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
+    NT_ASSERT(PdoExtension->Common.DeviceObject == DeviceObject);
+
+    if (InterlockedCompareExchangePointer(&PdoExtension->PendingStatusChangeIrp, NULL, Irp) == Irp)
+    {
+        Irp->IoStatus.Status = STATUS_CANCELLED;
+        Irp->IoStatus.Information = 0;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    }
+}
+
 _Use_decl_annotations_
 VOID
 VhciPdoRemoveDevice(
     PVHCI_PDO_DEVICE_EXTENSION PdoExtension)
 {
     PDEVICE_OBJECT DeviceObject;
+    PIRP PendingIrp;
+    PDRIVER_CANCEL OldCancelRoutine;
 
     PAGED_CODE();
 
     NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
-    PdoExtension->Common.PnpState = PnpStateDeleted;
     DeviceObject = PdoExtension->Common.DeviceObject;
+    PdoExtension->Common.PnpState = PnpStateDeleted;
+
+    PendingIrp = InterlockedExchangePointer(&PdoExtension->PendingStatusChangeIrp, NULL);
+    if (PendingIrp)
+    {
+        OldCancelRoutine = IoSetCancelRoutine(PendingIrp, NULL);
+        NT_ASSERT(OldCancelRoutine == VhciCancelStatusChange);
+
+        PendingIrp->IoStatus.Status = STATUS_DEVICE_REMOVED;
+        IoCompleteRequest(PendingIrp, IO_NO_INCREMENT);
+    }
 
     if (PdoExtension->RootHubInitWorkItem != NULL)
     {
@@ -316,6 +352,8 @@ VhciPdoQueryInterface(
 
     PAGED_CODE();
 
+    NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
+
     if (PdoExtension->Common.PnpState != PnpStateStarted)
     {
         DPRINT1("Pdo %p: VhciPdoQueryInterface -- device not started\n", PdoExtension->Common.DeviceObject);
@@ -456,6 +494,7 @@ VhciPdoPnp(
     PIO_STACK_LOCATION IoStack;
     PDEVICE_RELATIONS DeviceRelations;
     PWCHAR Buffer;
+    PIRP PendingIrp;
 
     NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
     DeviceObject = PdoExtension->Common.DeviceObject;
@@ -557,6 +596,12 @@ VhciPdoPnp(
         case IRP_MN_QUERY_STOP_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Pdo %p: IRP_MJ_PNP/IRP_MN_QUERY_STOP_DEVICE\n", DeviceObject);
+            PendingIrp = InterlockedExchangePointer(&PdoExtension->PendingStatusChangeIrp, NULL);
+            if (PendingIrp)
+            {
+                PendingIrp->IoStatus.Status = STATUS_DEVICE_REMOVED;
+                IoCompleteRequest(PendingIrp, IO_NO_INCREMENT);
+            }
             NT_ASSERT(PdoExtension->Common.PnpState == PnpStateStarted);
             NT_ASSERT(PdoExtension->Common.PreviousPnpState == PnpStateInvalid);
             PdoExtension->Common.PreviousPnpState = PdoExtension->Common.PnpState;
@@ -784,7 +829,38 @@ VhciPdoHandleUrb(
             break; 
         case URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER:
             DPRINT("Pdo %p: URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER\n", PdoExtension->Common.DeviceObject);
-            break; 
+            
+            if (Urb->UrbHeader.UsbdDeviceHandle != NULL)
+            {
+                break;
+            }
+
+            if (Urb->UrbBulkOrInterruptTransfer.PipeHandle != &RootHubConfiguration.EndpointDescriptor)
+            {
+                DPRINT("Pdo %p: URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER -- invalid pipe handle\n", PdoExtension->Common.DeviceObject);
+                return STATUS_NO_SUCH_DEVICE;
+            }
+
+            if (!(Urb->UrbBulkOrInterruptTransfer.TransferFlags & USBD_TRANSFER_DIRECTION_IN))
+            {
+                DPRINT("Pdo %p: URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER -- invalid transfer direction\n", PdoExtension->Common.DeviceObject);
+                break;
+            }
+
+            if (Urb->UrbBulkOrInterruptTransfer.TransferBufferLength != 1)
+            {
+                DPRINT("Pdo %p: URB_FUNCTION_BULK_OR_INTERRUPT_TRANSFER -- invalid transfer length\n", PdoExtension->Common.DeviceObject);
+                break;
+            }
+
+            if (InterlockedCompareExchangePointer(&PdoExtension->PendingStatusChangeIrp, Irp, NULL) != NULL)
+            {
+                DPRINT("Pdo %p: There was already a pending status change IRP, failing\n", PdoExtension->Common.DeviceObject);
+                return STATUS_DEVICE_BUSY;
+            }
+
+            IoMarkIrpPending(Irp);
+            return STATUS_PENDING;
         case URB_FUNCTION_ISOCH_TRANSFER:
             DPRINT("Pdo %p: URB_FUNCTION_ISOCH_TRANSFER\n", PdoExtension->Common.DeviceObject);
             break;
@@ -1065,9 +1141,12 @@ VhciPdoDeviceControl(
             Status = STATUS_INVALID_DEVICE_REQUEST;
             break;
     }
-    
-    Irp->IoStatus.Status = Status;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+    if (Status != STATUS_PENDING)
+    {
+        Irp->IoStatus.Status = Status;
+        IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    }
     return Status;
 }
 
@@ -1106,6 +1185,7 @@ VhciCreatePdo(
     PdoExtension->RootHubInitNotification = NULL;
     PdoExtension->RootHubInitContext = MM_BAD_POINTER;
     PdoExtension->RootHubInitWorkItem = NULL;
+    PdoExtension->PendingStatusChangeIrp = NULL;
 
     NT_ASSERT(FdoExtension->PdoExtension == NULL);
     FdoExtension->PdoExtension = PdoExtension;

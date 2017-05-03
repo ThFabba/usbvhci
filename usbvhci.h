@@ -71,6 +71,9 @@ typedef struct _VHCI_PDO_DEVICE_EXTENSION
     PVOID RootHubInitContext;
     _Guarded_by_(RootHubInitLock)
     PIO_WORKITEM RootHubInitWorkItem;
+
+    _Interlocked_
+    PIRP PendingStatusChangeIrp;
 } VHCI_PDO_DEVICE_EXTENSION, *PVHCI_PDO_DEVICE_EXTENSION;
 
 /* Globals */
