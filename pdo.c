@@ -41,7 +41,7 @@ static
 VOID
 NTAPI
 VhciInterfaceReference(
-    _In_reads_opt_(_Inexpressive_("varies")) PVOID Context);
+    _In_reads_opt_(_Inexpressible_("varies")) PVOID Context);
 
 _IRQL_requires_(PASSIVE_LEVEL)
 _IRQL_requires_same_
@@ -49,10 +49,11 @@ static
 VOID
 NTAPI
 VhciInterfaceDereference(
-    _In_reads_opt_(_Inexpressive_("varies")) PVOID Context);
+    _In_reads_opt_(_Inexpressible_("varies")) PVOID Context);
 
 _IRQL_requires_(PASSIVE_LEVEL)
 _IRQL_requires_same_
+static
 NTSTATUS
 VhciPdoQueryInterface(
     _In_ PVHCI_PDO_DEVICE_EXTENSION PdoExtension,
@@ -61,6 +62,13 @@ VhciPdoQueryInterface(
     _In_ USHORT Version,
     _In_ PINTERFACE Interface,
     _In_ PVOID InterfaceSpecificData);
+
+static
+NTSTATUS
+NTAPI
+VhciPdoHandleUrb(
+    _In_ PVHCI_PDO_DEVICE_EXTENSION PdoExtension,
+    _In_ PURB Urb);
 
 /* Section assignment */
 #ifdef ALLOC_PRAGMA
@@ -245,6 +253,8 @@ VhciInterfaceReference(
 
     PAGED_CODE();
 
+    _Analysis_assume_(Context != NULL);
+
     PdoExtension = Context; 
     NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
 
@@ -266,6 +276,8 @@ VhciInterfaceDereference(
 
     PAGED_CODE();
 
+    _Analysis_assume_(Context != NULL);
+
     PdoExtension = Context;
     NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
 
@@ -276,6 +288,7 @@ VhciInterfaceDereference(
 }
 
 _Use_decl_annotations_
+static
 NTSTATUS
 VhciPdoQueryInterface(
     PVHCI_PDO_DEVICE_EXTENSION PdoExtension,
@@ -632,6 +645,7 @@ VhciPdoPnp(
 }
 
 _Use_decl_annotations_
+static
 NTSTATUS
 NTAPI
 VhciPdoHandleUrb(
