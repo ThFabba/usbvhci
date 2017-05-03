@@ -85,10 +85,8 @@ VhciPdoRemoveDevice(
     PAGED_CODE();
 
     NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
-
-    NT_ASSERT(PdoExtension->Common.Deleted == FALSE);
+    PdoExtension->Common.PnpState = PnpStateDeleted;
     DeviceObject = PdoExtension->Common.DeviceObject;
-    PdoExtension->Common.Deleted = TRUE;
     PdoExtension->FdoExtension->PdoExtension = NULL;
     IoDeleteDevice(DeviceObject);
 }
@@ -299,6 +297,12 @@ VhciPdoQueryInterface(
 
     PAGED_CODE();
 
+    if (PdoExtension->Common.PnpState != PnpStateStarted)
+    {
+        DPRINT1("Pdo %p: VhciPdoQueryInterface -- device not started\n", PdoExtension->Common.DeviceObject);
+        return STATUS_DEVICE_NOT_READY;
+    }
+
     if (IsEqualGUIDAligned(InterfaceType, &USB_BUS_INTERFACE_HUB_GUID))
     {
         DPRINT("Pdo %p: QI/USB_BUS_INTERFACE_HUB_GUID\n", PdoExtension->Common.DeviceObject);
@@ -443,11 +447,13 @@ VhciPdoPnp(
         case IRP_MN_START_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Pdo %p: IRP_MJ_PNP/IRP_MN_START_DEVICE\n", DeviceObject);
+            PdoExtension->Common.PnpState = PnpStateStarted;
             Status = STATUS_SUCCESS;
             break;
         case IRP_MN_REMOVE_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Pdo %p: IRP_MJ_PNP/IRP_MN_REMOVE_DEVICE\n", DeviceObject);
+            NT_ASSERT(PdoExtension->Common.PnpState == PnpStateRemovePending);
             if (PdoExtension->Present == FALSE)
             {
                 VhciPdoRemoveDevice(PdoExtension);
@@ -532,37 +538,72 @@ VhciPdoPnp(
         case IRP_MN_QUERY_STOP_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Pdo %p: IRP_MJ_PNP/IRP_MN_QUERY_STOP_DEVICE\n", DeviceObject);
+            NT_ASSERT(PdoExtension->Common.PnpState == PnpStateStarted);
+            NT_ASSERT(PdoExtension->Common.PreviousPnpState == PnpStateInvalid);
+            PdoExtension->Common.PreviousPnpState = PdoExtension->Common.PnpState;
+            PdoExtension->Common.PnpState = PnpStateStopPending;
             Status = STATUS_SUCCESS;
             break;
         case IRP_MN_CANCEL_STOP_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Pdo %p: IRP_MJ_PNP/IRP_MN_CANCEL_STOP_DEVICE\n", DeviceObject);
+            if (PdoExtension->Common.PnpState == PnpStateStopPending)
+            {
+                NT_ASSERT(PdoExtension->Common.PreviousPnpState == PnpStateStarted);
+                PdoExtension->Common.PnpState = PdoExtension->Common.PreviousPnpState;
+#if DBG
+                PdoExtension->Common.PreviousPnpState = PnpStateInvalid;
+#endif
+            }
             Status = STATUS_SUCCESS;
             break;
         case IRP_MN_STOP_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Pdo %p: IRP_MJ_PNP/IRP_MN_STOP_DEVICE\n", DeviceObject);
+            PdoExtension->Common.PnpState = PnpStateNotStarted;
+#if DBG
+            PdoExtension->Common.PreviousPnpState = PnpStateInvalid;
+#endif
             Status = STATUS_SUCCESS;
             break;
         case IRP_MN_QUERY_REMOVE_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Pdo %p: IRP_MJ_PNP/IRP_MN_QUERY_REMOVE_DEVICE\n", DeviceObject);
+            NT_ASSERT(PdoExtension->Common.PnpState == PnpStateStarted ||
+                PdoExtension->Common.PnpState == PnpStateNotStarted);
+            NT_ASSERT(PdoExtension->Common.PreviousPnpState == PnpStateInvalid); 
+
             if (PdoExtension->InterfaceRefCount != 0)
             {
                 DPRINT1("Pdo %p: IRP_MJ_PNP/IRP_MN_QUERY_REMOVE_DEVICE -- %ld interface references outstanding, failling\n",
                         DeviceObject, PdoExtension->InterfaceRefCount);
                 return STATUS_DEVICE_BUSY;
             }
+            PdoExtension->Common.PreviousPnpState = PdoExtension->Common.PnpState;
+            PdoExtension->Common.PnpState = PnpStateRemovePending;
             Status = STATUS_SUCCESS;
             break;
         case IRP_MN_CANCEL_REMOVE_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Pdo %p: IRP_MJ_PNP/IRP_MN_CANCEL_REMOVE_DEVICE\n", DeviceObject);
+            if (PdoExtension->Common.PnpState == PnpStateStopPending)
+            {
+                NT_ASSERT(PdoExtension->Common.PreviousPnpState == PnpStateStarted ||
+                          PdoExtension->Common.PreviousPnpState == PnpStateNotStarted);
+                PdoExtension->Common.PnpState = PdoExtension->Common.PreviousPnpState;
+#if DBG
+                PdoExtension->Common.PreviousPnpState = PnpStateInvalid;
+#endif
+            }
             Status = STATUS_SUCCESS;
             break;
         case IRP_MN_SURPRISE_REMOVAL:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Pdo %p: IRP_MJ_PNP/IRP_MN_SURPRISE_REMOVAL\n", DeviceObject);
+            NT_ASSERT(PdoExtension->Common.PnpState == PnpStateStarted ||
+                      PdoExtension->Common.PnpState == PnpStateNotStarted);
+            NT_ASSERT(PdoExtension->Common.PreviousPnpState == PnpStateInvalid); 
+            PdoExtension->Common.PnpState = PnpStateRemovePending;
             Status = STATUS_SUCCESS;
             break;
         case IRP_MN_DEVICE_USAGE_NOTIFICATION:
@@ -767,6 +808,12 @@ VhciPdoDeviceControl(
     DeviceObject = PdoExtension->Common.DeviceObject;
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
+    if (PdoExtension->Common.PnpState != PnpStateStarted)
+    {
+        DPRINT1("Pdo %p: IRP_MJ_INTERNAL_DEVICE_CONTROL -- device not started\n", DeviceObject);
+        return STATUS_DEVICE_NOT_READY;
+    }
+
     switch (IoStack->Parameters.DeviceIoControl.IoControlCode)
     {
         case IOCTL_INTERNAL_USB_SUBMIT_URB:
@@ -857,7 +904,10 @@ VhciCreatePdo(
     PdoExtension = DeviceObject->DeviceExtension;
     PdoExtension->Common.Signature = VHCI_PDO_SIGNATURE;
     PdoExtension->Common.DeviceObject = DeviceObject;
-    PdoExtension->Common.Deleted = FALSE;
+    PdoExtension->Common.PnpState = PnpStateNotStarted;
+#if DBG
+    PdoExtension->Common.PreviousPnpState = PnpStateInvalid;
+#endif
 
     PdoExtension->FdoExtension = FdoExtension;
     PdoExtension->InterfaceRefCount = 0;

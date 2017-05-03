@@ -84,7 +84,8 @@ VhciFdoStartDeviceCompletion(
     FdoExtension = DeviceObject->DeviceExtension;
     NT_ASSERT(FdoExtension->Common.Signature == VHCI_FDO_SIGNATURE);
     NT_ASSERT(FdoExtension->Common.DeviceObject == DeviceObject);
-    NT_ASSERT(FdoExtension->Common.Deleted == FALSE);
+    NT_ASSERT(FdoExtension->Common.PnpState == PnpStateNotStarted);
+    NT_ASSERT(FdoExtension->Common.PreviousPnpState == PnpStateInvalid);
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     NT_ASSERT(IoStack->MajorFunction == IRP_MJ_PNP);
     NT_ASSERT(IoStack->MinorFunction == IRP_MN_START_DEVICE);
@@ -94,7 +95,11 @@ VhciFdoStartDeviceCompletion(
         IoMarkIrpPending(Irp);
     }
 
-    /* Start device */
+    if (NT_SUCCESS(Irp->IoStatus.Status))
+    {
+        /* Start device */
+        FdoExtension->Common.PnpState = PnpStateStarted;
+    }
 
     return STATUS_CONTINUE_COMPLETION;
 }
@@ -111,7 +116,8 @@ VhciFdoRemoveDevice(
 
     if (FdoExtension->PdoExtension)
     {
-        NT_ASSERT(FdoExtension->PdoExtension->Common.Deleted == FALSE);
+        NT_ASSERT(FdoExtension->PdoExtension->Common.PnpState == PnpStateRemovePending ||
+                  FdoExtension->PdoExtension->Common.PnpState == PnpStateNotStarted);
         VhciPdoRemoveDevice(FdoExtension->PdoExtension);
     }
 }
@@ -223,7 +229,11 @@ VhciFdoPnp(
         case IRP_MN_REMOVE_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Fdo %p: IRP_MJ_PNP/IRP_MN_REMOVE_DEVICE\n", DeviceObject);
-            FdoExtension->Common.Deleted = TRUE;
+            NT_ASSERT(FdoExtension->Common.PnpState == PnpStateRemovePending);
+            FdoExtension->Common.PnpState = PnpStateDeleted;
+#if DBG
+            FdoExtension->Common.PreviousPnpState = PnpStateInvalid;
+#endif
             Status = VhciForwardIrpAndForget(FdoExtension, Irp);
             IoDetachDevice(FdoExtension->LowerDevice);
             VhciFdoRemoveDevice(FdoExtension);
@@ -253,31 +263,65 @@ VhciFdoPnp(
         case IRP_MN_QUERY_STOP_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Fdo %p: IRP_MJ_PNP/IRP_MN_QUERY_STOP_DEVICE\n", DeviceObject);
+            NT_ASSERT(FdoExtension->Common.PnpState == PnpStateStarted);
+            NT_ASSERT(FdoExtension->Common.PreviousPnpState == PnpStateInvalid);
+            FdoExtension->Common.PreviousPnpState = FdoExtension->Common.PnpState;
+            FdoExtension->Common.PnpState = PnpStateStopPending;
             Irp->IoStatus.Status = STATUS_SUCCESS;
             break;
         case IRP_MN_CANCEL_STOP_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Fdo %p: IRP_MJ_PNP/IRP_MN_CANCEL_STOP_DEVICE\n", DeviceObject);
+            if (FdoExtension->Common.PnpState == PnpStateStopPending)
+            {
+                NT_ASSERT(FdoExtension->Common.PreviousPnpState == PnpStateStarted);
+                FdoExtension->Common.PnpState = FdoExtension->Common.PreviousPnpState;
+#if DBG
+                FdoExtension->Common.PreviousPnpState = PnpStateInvalid;
+#endif
+            }
             Irp->IoStatus.Status = STATUS_SUCCESS;
             break;
         case IRP_MN_STOP_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Fdo %p: IRP_MJ_PNP/IRP_MN_STOP_DEVICE\n", DeviceObject);
+            FdoExtension->Common.PnpState = PnpStateNotStarted;
+#if DBG
+            FdoExtension->Common.PreviousPnpState = PnpStateInvalid;
+#endif
             Irp->IoStatus.Status = STATUS_SUCCESS;
             break;
         case IRP_MN_QUERY_REMOVE_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Fdo %p: IRP_MJ_PNP/IRP_MN_QUERY_REMOVE_DEVICE\n", DeviceObject);
+            NT_ASSERT(FdoExtension->Common.PnpState == PnpStateStarted ||
+                      FdoExtension->Common.PnpState == PnpStateNotStarted);
+            NT_ASSERT(FdoExtension->Common.PreviousPnpState == PnpStateInvalid);
+            FdoExtension->Common.PreviousPnpState = FdoExtension->Common.PnpState;
+            FdoExtension->Common.PnpState = PnpStateRemovePending;
             Irp->IoStatus.Status = STATUS_SUCCESS;
             break;
         case IRP_MN_CANCEL_REMOVE_DEVICE:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Fdo %p: IRP_MJ_PNP/IRP_MN_CANCEL_REMOVE_DEVICE\n", DeviceObject);
+            if (FdoExtension->Common.PnpState == PnpStateStopPending)
+            {
+                NT_ASSERT(FdoExtension->Common.PreviousPnpState == PnpStateStarted || 
+                          FdoExtension->Common.PreviousPnpState == PnpStateNotStarted);
+                FdoExtension->Common.PnpState = FdoExtension->Common.PreviousPnpState;
+#if DBG
+                FdoExtension->Common.PreviousPnpState = PnpStateInvalid;
+#endif
+            }
             Irp->IoStatus.Status = STATUS_SUCCESS;
             break;
         case IRP_MN_SURPRISE_REMOVAL:
             NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
             DPRINT("Fdo %p: IRP_MJ_PNP/IRP_MN_SURPRISE_REMOVAL\n", DeviceObject);
+            NT_ASSERT(FdoExtension->Common.PnpState == PnpStateStarted ||
+                      FdoExtension->Common.PnpState == PnpStateNotStarted);
+            NT_ASSERT(FdoExtension->Common.PreviousPnpState == PnpStateInvalid); 
+            FdoExtension->Common.PnpState = PnpStateRemovePending;
             Irp->IoStatus.Status = STATUS_SUCCESS;
             break;
         case IRP_MN_DEVICE_USAGE_NOTIFICATION:

@@ -40,7 +40,7 @@ VhciDispatchPnp(
     CommonExtension = DeviceObject->DeviceExtension;
     NT_ASSERT(CommonExtension->DeviceObject == DeviceObject);
 
-    if (CommonExtension->Deleted)
+    if (CommonExtension->PnpState == PnpStateDeleted)
     {
         Irp->IoStatus.Status = STATUS_NO_SUCH_DEVICE;
         IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -110,7 +110,10 @@ VhciAddDevice(
     FdoExtension = DeviceObject->DeviceExtension;
     FdoExtension->Common.Signature = VHCI_FDO_SIGNATURE;
     FdoExtension->Common.DeviceObject = DeviceObject;
-    FdoExtension->Common.Deleted = FALSE;
+    FdoExtension->Common.PnpState = PnpStateNotStarted;
+#if DBG
+    FdoExtension->Common.PreviousPnpState = PnpStateInvalid;
+#endif
 
     FdoExtension->PdoExtension = NULL;
 

@@ -31,11 +31,22 @@
 #define VHCI_PNP_TAG 'nPhV'
 
 /* Types */
+typedef enum _VHCI_PNP_DEVICE_STATE
+{
+    PnpStateNotStarted,
+    PnpStateStarted,
+    PnpStateStopPending,
+    PnpStateRemovePending,
+    PnpStateDeleted,
+    PnpStateInvalid = -1
+} VHCI_PNP_DEVICE_STATE;
+
 typedef struct _VHCI_COMMON_DEVICE_EXTENSION
 {
     ULONG Signature;
     PDEVICE_OBJECT DeviceObject;
-    BOOLEAN Deleted;
+    VHCI_PNP_DEVICE_STATE PnpState;
+    VHCI_PNP_DEVICE_STATE PreviousPnpState;
 } VHCI_COMMON_DEVICE_EXTENSION, *PVHCI_COMMON_DEVICE_EXTENSION;
 
 typedef struct _VHCI_FDO_DEVICE_EXTENSION
