@@ -96,6 +96,11 @@ VhciPdoRemoveDevice(
     NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
     PdoExtension->Common.PnpState = PnpStateDeleted;
     DeviceObject = PdoExtension->Common.DeviceObject;
+
+    if (PdoExtension->RootHubInitWorkItem != NULL)
+    {
+        IoFreeWorkItem(PdoExtension->RootHubInitWorkItem);
+    }
     PdoExtension->FdoExtension->PdoExtension = NULL;
     IoDeleteDevice(DeviceObject);
 }
@@ -1098,6 +1103,9 @@ VhciCreatePdo(
     PdoExtension->FdoExtension = FdoExtension;
     PdoExtension->InterfaceRefCount = 0;
     PdoExtension->Present = FALSE;
+    PdoExtension->RootHubInitNotification = NULL;
+    PdoExtension->RootHubInitContext = MM_BAD_POINTER;
+    PdoExtension->RootHubInitWorkItem = NULL;
 
     NT_ASSERT(FdoExtension->PdoExtension == NULL);
     FdoExtension->PdoExtension = PdoExtension;

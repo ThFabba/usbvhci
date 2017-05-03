@@ -301,6 +301,39 @@ VhciHubInitialize20Hub(
     return STATUS_NOT_IMPLEMENTED;
 }
 
+static IO_WORKITEM_ROUTINE RootHubInitWorker;
+_Use_decl_annotations_
+static
+VOID
+NTAPI
+RootHubInitWorker(
+    PDEVICE_OBJECT DeviceObject,
+    PVOID Context)
+{
+    PVHCI_PDO_DEVICE_EXTENSION PdoExtension;
+    PRH_INIT_CALLBACK CallbackRoutine;
+    PVOID CallbackContext;
+    KIRQL OldIrql;
+
+    _Analysis_assume_(Context != NULL);
+    NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
+
+    PdoExtension = Context;
+    NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
+    NT_ASSERT(PdoExtension->Common.DeviceObject == DeviceObject);
+    NT_ASSERT(DeviceObject->DeviceExtension == PdoExtension);
+
+    KeAcquireSpinLock(&PdoExtension->RootHubInitLock, &OldIrql);
+    CallbackRoutine = PdoExtension->RootHubInitNotification;
+    CallbackContext = PdoExtension->RootHubInitContext;
+    KeReleaseSpinLock(&PdoExtension->RootHubInitLock, OldIrql);
+
+    if (CallbackRoutine != NULL)
+    {
+        CallbackRoutine(CallbackContext);
+    }
+}
+
 _Use_decl_annotations_
 NTSTATUS
 NTAPI
@@ -309,13 +342,41 @@ VhciHubRootHubInitNotification(
     PVOID CallbackContext,
     PRH_INIT_CALLBACK CallbackRoutine)
 {
-    DBG_UNREFERENCED_PARAMETER(BusContext);
-    DBG_UNREFERENCED_PARAMETER(CallbackContext);
-    DBG_UNREFERENCED_PARAMETER(CallbackRoutine);
+    NTSTATUS Status;
+    PVHCI_PDO_DEVICE_EXTENSION PdoExtension;
+    KIRQL OldIrql;
 
-    UNIMPLEMENTED;
+    NT_ASSERT(KeGetCurrentIrql() == PASSIVE_LEVEL);
 
-    return STATUS_NOT_IMPLEMENTED;
+    PdoExtension = BusContext;
+    NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
+
+    Status = STATUS_SUCCESS;
+
+    KeAcquireSpinLock(&PdoExtension->RootHubInitLock, &OldIrql);
+
+    PdoExtension->RootHubInitNotification = CallbackRoutine;
+    PdoExtension->RootHubInitContext = CallbackContext;
+
+    if (PdoExtension->RootHubInitWorkItem == NULL)
+    {
+        PdoExtension->RootHubInitWorkItem = IoAllocateWorkItem(PdoExtension->Common.DeviceObject);
+        if (PdoExtension->RootHubInitWorkItem == NULL)
+        {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+    if (PdoExtension->RootHubInitWorkItem != NULL)
+    {
+        IoQueueWorkItem(PdoExtension->RootHubInitWorkItem,
+                        RootHubInitWorker,
+                        DelayedWorkQueue,
+                        PdoExtension);
+    }
+
+    KeReleaseSpinLock(&PdoExtension->RootHubInitLock, OldIrql);
+
+    return Status;
 }
 
 _Use_decl_annotations_

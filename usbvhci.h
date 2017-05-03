@@ -63,6 +63,14 @@ typedef struct _VHCI_PDO_DEVICE_EXTENSION
     _Interlocked_
     volatile LONG InterfaceRefCount;
     BOOLEAN Present;
+    
+    KSPIN_LOCK RootHubInitLock;
+    _Guarded_by_(RootHubInitLock)
+    PRH_INIT_CALLBACK RootHubInitNotification;
+    _Guarded_by_(RootHubInitLock)
+    PVOID RootHubInitContext;
+    _Guarded_by_(RootHubInitLock)
+    PIO_WORKITEM RootHubInitWorkItem;
 } VHCI_PDO_DEVICE_EXTENSION, *PVHCI_PDO_DEVICE_EXTENSION;
 
 /* Globals */
