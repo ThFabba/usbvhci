@@ -41,6 +41,7 @@ VhciDispatchPower(
     }
 
     Irp->IoStatus.Status = Status;
+    PoStartNextPowerIrp(Irp);
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
     return Status;
 }
