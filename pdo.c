@@ -577,7 +577,8 @@ VhciPdoPnp(
             {
                 DPRINT1("Pdo %p: IRP_MJ_PNP/IRP_MN_QUERY_REMOVE_DEVICE -- %ld interface references outstanding, failling\n",
                         DeviceObject, PdoExtension->InterfaceRefCount);
-                return STATUS_DEVICE_BUSY;
+                Status = STATUS_DEVICE_BUSY;
+                break;
             }
             PdoExtension->Common.PreviousPnpState = PdoExtension->Common.PnpState;
             PdoExtension->Common.PnpState = PnpStateRemovePending;
