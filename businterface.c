@@ -35,6 +35,8 @@ VhciHubCreateUsbDevice(
     DBG_UNREFERENCED_PARAMETER(PortStatus);
     DBG_UNREFERENCED_PARAMETER(PortNumber);
 
+    PAGED_CODE();
+
     UNIMPLEMENTED;
 
     return STATUS_NOT_IMPLEMENTED;
@@ -49,6 +51,8 @@ VhciHubInitializeUsbDevice(
 {
     DBG_UNREFERENCED_PARAMETER(BusContext);
     DBG_UNREFERENCED_PARAMETER(DeviceHandle);
+
+    PAGED_CODE();
 
     UNIMPLEMENTED;
 
@@ -73,6 +77,8 @@ VhciHubGetUsbDescriptors(
     DBG_UNREFERENCED_PARAMETER(ConfigDescriptorBuffer);
     DBG_UNREFERENCED_PARAMETER(ConfigDescriptorBufferLength);
 
+    PAGED_CODE();
+
     UNIMPLEMENTED;
 
     return STATUS_NOT_IMPLEMENTED;
@@ -90,6 +96,8 @@ VhciHubRemoveUsbDevice(
     DBG_UNREFERENCED_PARAMETER(DeviceHandle);
     DBG_UNREFERENCED_PARAMETER(Flags);
     
+    PAGED_CODE();
+
     UNIMPLEMENTED;
 
     return STATUS_NOT_IMPLEMENTED;
@@ -107,6 +115,8 @@ VhciHubRestoreUsbDevice(
     DBG_UNREFERENCED_PARAMETER(OldDeviceHandle);
     DBG_UNREFERENCED_PARAMETER(NewDeviceHandle);
 
+    PAGED_CODE();
+
     UNIMPLEMENTED;
 
     return STATUS_NOT_IMPLEMENTED;
@@ -121,6 +131,8 @@ VhciHubGetPortHackFlags(
 {
     DBG_UNREFERENCED_PARAMETER(BusContext);
     DBG_UNREFERENCED_PARAMETER(Flags);
+
+    PAGED_CODE();
 
     UNIMPLEMENTED;
 
@@ -142,6 +154,8 @@ VhciHubQueryDeviceInformation(
     DBG_UNREFERENCED_PARAMETER(DeviceInformationBuffer);
     DBG_UNREFERENCED_PARAMETER(DeviceInformationBufferLength);
     DBG_UNREFERENCED_PARAMETER(LengthOfDataCopied);
+
+    PAGED_CODE();
 
     UNIMPLEMENTED;
 
@@ -192,15 +206,47 @@ VhciHubGetExtendedHubInformation(
     ULONG HubInformationBufferLength,
     PULONG LengthOfDataCopied)
 {
-    DBG_UNREFERENCED_PARAMETER(BusContext);
+    PVHCI_PDO_DEVICE_EXTENSION PdoExtension;
+    PUSB_EXTHUB_INFORMATION_0 ExtHubInfo;
+
     DBG_UNREFERENCED_PARAMETER(HubPhysicalDeviceObject);
     DBG_UNREFERENCED_PARAMETER(HubInformationBuffer);
     DBG_UNREFERENCED_PARAMETER(HubInformationBufferLength);
     DBG_UNREFERENCED_PARAMETER(LengthOfDataCopied);
 
-    UNIMPLEMENTED;
+    PdoExtension = BusContext;
+    NT_ASSERT(PdoExtension->Common.Signature == VHCI_PDO_SIGNATURE);
 
-    return STATUS_NOT_IMPLEMENTED;
+    ExtHubInfo = HubInformationBuffer;
+    if (HubInformationBuffer == NULL ||
+        HubInformationBufferLength == 0)
+    {
+        *LengthOfDataCopied = FIELD_OFFSET(USB_EXTHUB_INFORMATION_0, Port[1]);
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    if (HubInformationBufferLength >= RTL_SIZEOF_THROUGH_FIELD(USB_EXTHUB_INFORMATION_0, InformationLevel))
+    {
+        ExtHubInfo->InformationLevel = 0;
+    }
+
+    if (HubInformationBufferLength >= RTL_SIZEOF_THROUGH_FIELD(USB_EXTHUB_INFORMATION_0, NumberOfPorts))
+    {
+        ExtHubInfo->NumberOfPorts = 1;
+    }
+
+    if (HubInformationBufferLength >= RTL_SIZEOF_THROUGH_FIELD(USB_EXTHUB_INFORMATION_0, Port[0]))
+    {
+        ExtHubInfo->Port[0].PhysicalPortNumber = 1;
+        ExtHubInfo->Port[0].PortLabelNumber = 1;
+        ExtHubInfo->Port[0].VidOverride = 0;
+        ExtHubInfo->Port[0].PidOverride = 0;
+        ExtHubInfo->Port[0].PortAttributes = 0; // USB_PORTATTR_SHARED_USB2
+    }
+
+    *LengthOfDataCopied = min(HubInformationBufferLength,
+                              (ULONG)FIELD_OFFSET(USB_EXTHUB_INFORMATION_0, Port[1]));
+    return STATUS_SUCCESS;
 }
 
 _Use_decl_annotations_
